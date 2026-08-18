@@ -10,31 +10,87 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Visit LemeHost server page
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: Open LemeHost and refresh
         env:
           LEMEHOST_IDENTITY: ${{ secrets.LEMEHOST_IDENTITY }}
           LEMEHOST_SESSION: ${{ secrets.LEMEHOST_SESSION }}
         run: |
-          set -e
+          cat > refresh.js <<'EOF'
+          const { chromium } = require('playwright');
 
-          COOKIE="_identity-frontend=${LEMEHOST_IDENTITY}; advanced-frontend=${LEMEHOST_SESSION}"
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true
+            });
 
-          echo "Visiting LemeHost..."
+            const context = await browser.newContext();
 
-          curl -sS \
-            --max-time 30 \
-            -A "Mozilla/5.0" \
-            -H "Cookie: ${COOKIE}" \
-            -D /tmp/headers.txt \
-            -o /tmp/page.html \
-            "https://lemehost.com/server/view?id=10261365"
+            await context.addCookies([
+              {
+                name: '_identity-frontend',
+                value: process.env.LEMEHOST_IDENTITY,
+                domain: 'lemehost.com',
+                path: '/',
+                secure: true
+              },
+              {
+                name: 'advanced-frontend',
+                value: process.env.LEMEHOST_SESSION,
+                domain: 'lemehost.com',
+                path: '/',
+                secure: true
+              }
+            ]);
 
-          echo "HTTP response:"
-          head -n 1 /tmp/headers.txt
+            const page = await context.newPage();
 
-          if grep -qiE "login|site/login" /tmp/headers.txt /tmp/page.html; then
-            echo "❌ LemeHost still redirected to login."
-            exit 1
-          fi
+            console.log('Opening LemeHost server page...');
 
-          echo "✅ LemeHost server page was accessed with the saved session."
+            await page.goto(
+              'https://lemehost.com/server/view?id=10261365',
+              {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+              }
+            );
+
+            console.log('Page loaded:', await page.title());
+
+            await page.waitForTimeout(10000);
+
+            console.log('Refreshing page...');
+
+            await page.reload({
+              waitUntil: 'domcontentloaded',
+              timeout: 60000
+            });
+
+            await page.waitForTimeout(10000);
+
+            console.log('Final URL:', page.url());
+            console.log('Title:', await page.title());
+
+            if (page.url().includes('/site/login')) {
+              throw new Error('LemeHost redirected to login.');
+            }
+
+            console.log('SUCCESS: LemeHost session is active.');
+            await browser.close();
+          })();
+          EOF
+
+          node refresh.js
