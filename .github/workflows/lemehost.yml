@@ -10,16 +10,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Visit my LemeHost server
+      - name: Visit LemeHost server page
+        env:
+          LEMEHOST_IDENTITY: ${{ secrets.LEMEHOST_IDENTITY }}
+          LEMEHOST_SESSION: ${{ secrets.LEMEHOST_SESSION }}
         run: |
-          curl -L --max-time 30 \
-            "https://lemehost.com/server/view?id=10261365" \
-            -o /tmp/lemehost.html
+          set -e
 
-          echo "Page visited."
-          
-          if grep -qi "login" /tmp/lemehost.html; then
-            echo "WARNING: LemeHost redirected us to login."
-          else
-            echo "The server page appears accessible."
+          COOKIE="_identity-frontend=${LEMEHOST_IDENTITY}; advanced-frontend=${LEMEHOST_SESSION}"
+
+          echo "Visiting LemeHost..."
+
+          curl -sS \
+            --max-time 30 \
+            -A "Mozilla/5.0" \
+            -H "Cookie: ${COOKIE}" \
+            -D /tmp/headers.txt \
+            -o /tmp/page.html \
+            "https://lemehost.com/server/view?id=10261365"
+
+          echo "HTTP response:"
+          head -n 1 /tmp/headers.txt
+
+          if grep -qiE "login|site/login" /tmp/headers.txt /tmp/page.html; then
+            echo "❌ LemeHost still redirected to login."
+            exit 1
           fi
+
+          echo "✅ LemeHost server page was accessed with the saved session."
