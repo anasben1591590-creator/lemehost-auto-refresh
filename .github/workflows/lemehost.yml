@@ -10,7 +10,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Visit LemeHost
+      - name: Visit my LemeHost server
         run: |
-          curl -L --max-time 30 https://lemehost.com/ -o /dev/null
-          echo "LemeHost visited successfully"
+          curl -L --max-time 30 \
+            "https://lemehost.com/server/view?id=10261365" \
+            -o /tmp/lemehost.html
+
+          echo "Page visited."
+          
+          if grep -qi "login" /tmp/lemehost.html; then
+            echo "WARNING: LemeHost redirected us to login."
+          else
+            echo "The server page appears accessible."
+          fi
